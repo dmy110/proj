@@ -7,7 +7,8 @@
 #include "hiredis/hiredis.h"
 #include "hiredis/async.h"
 #include "event2/event.h"
-
+#include <google/protobuf/message.h>
+#include <functional>
 // void init_watch_fn(zhandle_t *zh, int type, 
         // int state, const char *path,void *watcherCtx)
 // {
@@ -17,16 +18,25 @@ class redis_example
 {
 public:
 static void onMessage(redisAsyncContext *c, void *reply, void *privdata) {
-    redisReply *r = (redisReply*)reply;
     if (c->err) {
     	printf("%s\n", c->errstr);
     	exit(0);
     }
+
     if (reply == NULL) {
     	return;
     }
-    auto key = (std::string*)privdata;
-    printf("%s\n", key->c_str());
+
+    redisReply *r = (redisReply*)reply;
+    if (r->type == REDIS_REPLY_ERROR) {
+        printf("%s\n", r->str);
+        exit(0);
+    }
+
+    if (privdata) {
+        auto key = (std::string*)privdata;
+        printf("privdata:%s\n", key->c_str());
+    }
 
     if (r->type == REDIS_REPLY_ARRAY) {
         for (int j = 0; j < r->elements; j++) {
@@ -95,6 +105,7 @@ void rediskey()
     std::string* key1 = new std::string("test_key");
     std::string* key2 = new std::string("test2_key");
 
+    redisAsyncCommand(c, redis_example::onMessage, key1, "AUTH 1234");
     redisAsyncCommand(c, redis_example::onMessage, key1, "GET test_key");
     redisAsyncCommand(c, redis_example::onMessage, key2, "GET test_key2");
     event_base_dispatch(base);      
@@ -127,10 +138,23 @@ public:
     }
 };
 
+class test_bind
+{
+public:
+    void fn(int i, int j)
+    {
+
+    }
+};
+
+
 int main(int argc, char const *argv[])
 {
+    using namespace std::placeholders;
+    test_bind tb;
+    void (*fn)(int, int) = std::bind(&test_bind::fn, &tb, _1, _2);
 	// redis_example re;
 	// re.rediskey();
-    test_destruction::construct();
+    // test_destruction::construct();
 	return 0;
 }

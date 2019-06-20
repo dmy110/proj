@@ -13,9 +13,13 @@
 int main()
 {
 	using namespace dmy_dist_memory;
-	DistMemoryRedisTool::init_tool();
-	DistMemory<test_data> test_data("test_data", 0);
-	test_data.mutable_data()->extra = "hehesimida";
-	getchar();	
+	DistMemoryRedisTool::init_tool("127.0.0.1", 6379, "");
+	for (int i = 0; i < 100; ++i) {
+		DistMemory<test_data> test_data("test_data", i);
+		{
+			test_data.mutable_data()->extra = "hehesimida";
+		}
+		getchar();	
+	}
 	return 0;
 }

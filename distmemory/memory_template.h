@@ -47,6 +47,7 @@ public:
 	DistMemory(const std::string& type_str, uint64_t id):_data(type_str, id)
 	{
 		DistMemoryRedisTool::reg_data(_data.type_str, _data.id, std::bind(&DATA::parse, &_data, _1));	
+		DistMemoryRedisTool::get_data(_data.type_str, _data.id);
 	}
 
 	template <typename... Args>
@@ -70,6 +71,7 @@ public:
 	{
 		return MutableData<DATA>(_data);
 	}
+
 private:
 	DATA _data;
 };
