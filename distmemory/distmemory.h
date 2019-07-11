@@ -83,8 +83,8 @@ public:
 	void cmd_connect_to_redis();
 
 	void handle_process();
-	void cleanup();
-	void check();
+	// void cleanup();
+	// void check();
 	
 	redis_tool_list_t sub_list;
 	// bool need_reconnect = false;

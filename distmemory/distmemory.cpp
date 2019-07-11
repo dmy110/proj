@@ -215,6 +215,14 @@ void DistMemoryRedisToolThread::sub_connect_to_redis()
     		&DistMemoryRedisToolThread::handle_auth,
     		nullptr, passwd.c_str());
     }
+
+    std::unique_lock wlock(DistMemoryRedisTool::tool_thread.sub_list.command_lock);
+    for (auto& [key_str, data] : DistMemoryRedisTool::parse_func_map) {
+    	for (auto& it : data) {
+    		redis_tool_key_t* rtk = new redis_tool_key_t(key_str, it.first);
+    		DistMemoryRedisTool::tool_thread.sub_list.command.push_back({rtk, rtct_t:SUB});
+    	}
+    }
 }
 
 void DistMemoryRedisToolThread::connect_to_redis()

@@ -1,0 +1,6 @@
+package test;
+message test_reflection
+{
+	optional int32 integer = 1;
+	optional string str = 2;
+}
