@@ -62,55 +62,50 @@ void RedisTool::sub_connect_to_redis()
     		handle_auth,
     		this, passwd.c_str());
     }
+    for (auto& it : sub_callback) {
+    	std::string cmd = "SUBSCRIBE " + it.second->channel;
+    	redisAsyncCommand(sub_rac, handle_sub, it.second, cmd.c_str());
+    }
+    sub_callback.clear();
 }
 
-void RedisTool::psubscribe(const std::string& channel, std::function<void(std::string&, std::string&)> callback)
+void RedisTool::exec_subscribe_cmd(const std::string& channel, std::function<void(redisReply*)> cb)
 {
-	// callback_list[channel] = callback;
-	std::string cmd = "PSUBSCRIBE " + channel;
-	auto callback_ptr = new std::function<void(std::string&, std::string&)>(callback);
-	redisAsyncCommand(sub_rac, handle_psub, callback_ptr, cmd.c_str());
+	std::string exec_cmd = "SUBSCRIBE " + channel;
+	auto cb_obj = new sub_callback_t({channel, cb});
+	sub_callback[channel] = cb_obj;
+
+	redisAsyncCommand(sub_rac, handle_sub, cb_obj, exec_cmd.c_str());
 }
 
-void RedisTool::handle_psub(redisAsyncContext *c, void *reply_ptr, void *privdata)
+void RedisTool::exec_subscribe_cmd(const std::string& channel, std::function<void(std::string)> cb)
+{
+	exec_subscribe_cmd(channel, [cb](redisReply* reply){
+		uint32_t msg_coming = 0;
+		for (int j = 0; j < reply->elements; j++) {
+    		if (std::strncmp(reply->element[j]->str, "message", sizeof("message")) != 0) {
+    			msg_coming = 2;
+    			continue;
+    		}
+    		if (msg_coming == 1) {
+    			cb(std::string(reply->element[j]->str, reply->element[j]->len));
+    			msg_coming = 0;
+    		} else if (msg_coming) {
+    			--msg_coming;
+    		}
+        }
+	});
+}
+
+void RedisTool::handle_sub(redisAsyncContext *c, void *reply_ptr, void *privdata)
 {
 	redisReply* reply = static_cast<redisReply*>(reply_ptr);
-	if (!reply) {
-		if (c->err) {
-			LOG_ERROR("sub:%s\n", c->errstr);
-			return ;
-		}
-	}
-	if (reply->type == REDIS_REPLY_ERROR) {
-		LOG_ERROR("reply_error:%s", reply->str);
-		return;
-	}
+	DMY_CHECK_REDIS_ERROR(c, reply);
 
-	// RedisTool* rt = (RedisTool*)privdata;
-	std::function<void(std::string&, std::string&)>* callback = (std::function<void(std::string&, std::string&)>*)privdata;
-	if (reply->type == REDIS_REPLY_ARRAY) {
-		std::string channel;
-		std::string data;
-        for (int j = 0; j < reply->elements; j++) {
-        	if (j%3 == 0 && reply->element[j]->type == REDIS_REPLY_STRING) {
-        		if (std::strncmp(reply->element[j]->str, "message", sizeof("message")) != 0) {
-        			j += 2;
-        			continue;
-        		}
-        	} 
-        	if (j%3 == 1 && reply->element[j]->type == REDIS_REPLY_STRING) {
-        		channel = std::string(reply->element[j]->str, reply->element[j]->len);
-        	}
-        	if (j%3 == 2 && reply->element[j]->type == REDIS_REPLY_STRING) {
-				// break;
-				data = std::string(reply->element[j]->str, reply->element[j]->len);
-				(*callback)(channel, data);
-				// if (rt->callback_list[channel]) {
-				// 	rt->callback_list[channel](data);
-				// }
-        	}
-        }
-    } 	
+	// std::function<void(std::string&, std::string&)>* callback = (std::function<void(std::string&, std::string&)>*)privdata;
+	sub_callback_t* callback_obj = (sub_callback_t*)privdata;
+	
+    callback_obj->cb(reply);
 }
 
 void RedisTool::handle_auth(redisAsyncContext *c, void *reply_ptr, void *privdata)
@@ -196,11 +191,51 @@ void RedisTool::handle_cmd_disconnected(const redisAsyncContext *c, int status)
 	cmd_connect_failure = true;
 }
 
-void RedisTool::publish(const std::string& channel, std::string& data)
+void RedisTool::exec_get(const std::string& cmd, std::function<void(std::string)> cb)
 {
-	std::string pub_cmd = "PUBLISH " + channel + " %b";
-	redisAsyncCommand(cmd_rac, nullptr, nullptr, pub_cmd.c_str(), data.data(), data.size());	
+	exec_cmd(cmd, [cb](redisReply* reply){
+		if (reply->type == REDIS_REPLY_INTEGER) {
+			cb(std::to_string(reply->integer));
+		} else if (reply->type == REDIS_REPLY_STRING) {
+			cb(std::string(reply->str, reply->len));
+		}
+	});
 }
+
+void RedisTool::exec_cmd(const std::string& cmd, std::function<void(redisReply*)> cb)
+{
+	std::function<void(redisReply*)>* cb_ptr = new std::function<void(redisReply*)>(cb);
+	redisAsyncCommand(cmd_rac, handle_cmd_callback, cb_ptr, "%b", cmd.c_str());
+}
+
+void RedisTool::handle_cmd_callback(redisAsyncContext *c, void *reply_ptr, void *privdata)
+{
+	redisReply* reply = static_cast<redisReply*>(reply_ptr);
+	DMY_CHECK_REDIS_ERROR(c, reply);
+
+	// std::function<void(std::string&, std::string&)>* callback = (std::function<void(std::string&, std::string&)>*)privdata;
+	// sub_callback_t* callback_obj = (sub_callback_t*)privdata;
+	std::function<void(redisReply*)>* cb_ptr = (std::function<void(redisReply*)>*)privdata;
+	(*cb_ptr)(reply);
+	delete cb_ptr;
+    // callback_obj->cb(reply);
+}
+
+void RedisTool::exec_cmd(const std::string& cmd)
+{
+	redisAsyncCommand(cmd_rac, nullptr, nullptr, "%b", cmd.c_str());
+}
+
+// void RedisTool::publish(const std::string& channel, std::string& data)
+// {
+	// std::string pub_cmd = "PUBLISH " + channel + " %b";
+	// redisAsyncCommand(cmd_rac, nullptr, nullptr, pub_cmd.c_str(), data.data(), data.size());	
+// }
+
+// void RedisTool::exec_command(const std::string& cmd)
+// {
+	// redisAsyncCommand(cmd_rac, nullptr, nullptr, "%b", cmd.data(), cmd.size());
+// }
 
 bool RedisTool::sub_connect_failure = false;
 bool RedisTool::cmd_connect_failure = false;
@@ -210,3 +245,8 @@ RedisTool::RedisTool()
 
 RedisTool::~RedisTool()
 {}
+
+// void RedisTool::exec_command(const std::string& cmd, void* privdata, void(*callback)(redisAsyncContext *c, void *reply, void *privdata))
+// {
+// 	redisAsyncCommand(cmd_rac, callback, privdata, "%b", cmd.data(), cmd.size());
+// }
