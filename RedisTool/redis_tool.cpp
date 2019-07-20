@@ -2,6 +2,7 @@
 #include "dmy_common.h"
 #include <signal.h>
 #include <cstring>
+#include <sstream>
 using namespace dmy_redis_tool;
 using namespace dmy_common;
 void RedisTool::init_redis_tool(const std::string& ip, uint32_t port, const std::string& passwd)
@@ -12,7 +13,7 @@ void RedisTool::init_redis_tool(const std::string& ip, uint32_t port, const std:
 		passwd
 	};
 
-	// signal(SIGPIPE, SIG_IGN);
+	// signal(SIGPIPE, SIG_IGN)
 	struct sigaction pipe_action;
 	pipe_action.sa_handler = SIG_IGN;
 	sigaction(SIGPIPE, &pipe_action, nullptr);
@@ -24,7 +25,7 @@ void RedisTool::init_redis_tool(const std::string& ip, uint32_t port, const std:
 
 void RedisTool::handle_sub_connected(const redisAsyncContext *c, int status)
 {
-	LOG("redis connect:%d\n", status);
+	LOG("sub redis connect:%d\n", status);
 	if (status == REDIS_ERR) {
 		// std::this_thread::sleep_for(1s);
 		sub_connect_failure = true;
@@ -35,6 +36,33 @@ void RedisTool::handle_sub_disconnected(const redisAsyncContext *c, int status)
 {
 	LOG_ERROR("disconnected:%s\n", c->errstr);	
 	sub_connect_failure = true;	
+}
+
+void RedisTool::cmd_connect_to_redis()
+{
+    auto ip = redis_connect_data.ip;
+    auto port = redis_connect_data.port;
+    auto passwd = redis_connect_data.passwd;
+   	 
+    if (cmd_base) {
+    	event_base_free(cmd_base);
+    }
+
+	cmd_base = event_base_new();
+    cmd_rac = redisAsyncConnect(ip.c_str(), port);
+    if (cmd_rac->err) {
+        LOG_ERROR("error: %s\n", cmd_rac->errstr);
+        return;
+    }
+    redisAsyncSetConnectCallback(cmd_rac, handle_cmd_connected);
+    redisAsyncSetDisconnectCallback(cmd_rac, handle_cmd_disconnected);
+    redisLibeventAttach(cmd_rac, cmd_base);
+    if (passwd.size()) {
+    	std::string auth_cmd = "AUTH " + passwd;
+    	redisAsyncCommand(cmd_rac, 
+    		handle_auth,
+    		this, passwd.c_str());
+    }	
 }
 
 void RedisTool::sub_connect_to_redis()
@@ -81,18 +109,13 @@ void RedisTool::exec_subscribe_cmd(const std::string& channel, std::function<voi
 void RedisTool::exec_subscribe_cmd(const std::string& channel, std::function<void(std::string)> cb)
 {
 	exec_subscribe_cmd(channel, [cb](redisReply* reply){
-		uint32_t msg_coming = 0;
-		for (int j = 0; j < reply->elements; j++) {
-    		if (std::strncmp(reply->element[j]->str, "message", sizeof("message")) != 0) {
-    			msg_coming = 2;
-    			continue;
+		for (int j = 0; j < reply->elements;) {
+    		if (std::strncmp(reply->element[j]->str, "message", sizeof("message")) == 0) {
+    			if (j + 2 < reply->elements) {
+	    			cb(std::string(reply->element[j + 2]->str, reply->element[j + 2]->len));
+    			}
     		}
-    		if (msg_coming == 1) {
-    			cb(std::string(reply->element[j]->str, reply->element[j]->len));
-    			msg_coming = 0;
-    		} else if (msg_coming) {
-    			--msg_coming;
-    		}
+			j += 3;
         }
 	});
 }
@@ -149,36 +172,11 @@ void RedisTool::redis_tool_tick()
 	}	
 }
 
-void RedisTool::cmd_connect_to_redis()
-{
-    auto ip = redis_connect_data.ip;
-    auto port = redis_connect_data.port;
-    auto passwd = redis_connect_data.passwd;
-   	 
-    if (cmd_base) {
-    	event_base_free(cmd_base);
-    }
 
-	cmd_base = event_base_new();
-    cmd_rac = redisAsyncConnect(ip.c_str(), port);
-    if (cmd_rac->err) {
-        LOG_ERROR("error: %s\n", cmd_rac->errstr);
-        return;
-    }
-    redisAsyncSetConnectCallback(cmd_rac, handle_cmd_connected);
-    redisAsyncSetDisconnectCallback(cmd_rac, handle_cmd_disconnected);
-    redisLibeventAttach(cmd_rac, cmd_base);
-    if (passwd.size()) {
-    	std::string auth_cmd = "AUTH " + passwd;
-    	redisAsyncCommand(cmd_rac, 
-    		handle_auth,
-    		this, passwd.c_str());
-    }	
-}
 
 void RedisTool::handle_cmd_connected(const redisAsyncContext *c, int status)
 {
-	LOG("redis connect:%d\n", status);
+	LOG("cmd redis connect:%d\n", status);
 	if (status == REDIS_ERR) {
 		// std::this_thread::sleep_for(1s);
 		cmd_connect_failure = true;
@@ -191,9 +189,11 @@ void RedisTool::handle_cmd_disconnected(const redisAsyncContext *c, int status)
 	cmd_connect_failure = true;
 }
 
-void RedisTool::exec_get(const std::string& cmd, std::function<void(std::string)> cb)
+void RedisTool::exec_get(const std::string& key, std::function<void(std::string)> cb)
 {
-	exec_cmd(cmd, [cb](redisReply* reply){
+	std::stringstream ss;
+	ss<<"GET "<<key;
+	exec_cmd(ss.str(), [cb](redisReply* reply){
 		if (reply->type == REDIS_REPLY_INTEGER) {
 			cb(std::to_string(reply->integer));
 		} else if (reply->type == REDIS_REPLY_STRING) {
@@ -205,7 +205,7 @@ void RedisTool::exec_get(const std::string& cmd, std::function<void(std::string)
 void RedisTool::exec_cmd(const std::string& cmd, std::function<void(redisReply*)> cb)
 {
 	std::function<void(redisReply*)>* cb_ptr = new std::function<void(redisReply*)>(cb);
-	redisAsyncCommand(cmd_rac, handle_cmd_callback, cb_ptr, "%b", cmd.c_str());
+	redisAsyncCommand(cmd_rac, handle_cmd_callback, cb_ptr, cmd.c_str());
 }
 
 void RedisTool::handle_cmd_callback(redisAsyncContext *c, void *reply_ptr, void *privdata)
@@ -223,7 +223,8 @@ void RedisTool::handle_cmd_callback(redisAsyncContext *c, void *reply_ptr, void 
 
 void RedisTool::exec_cmd(const std::string& cmd)
 {
-	redisAsyncCommand(cmd_rac, nullptr, nullptr, "%b", cmd.c_str());
+	std::string* cmd_backup = new std::string(cmd);
+	redisAsyncCommand(cmd_rac, handle_check_error_callback, cmd_backup, cmd.c_str());
 }
 
 // void RedisTool::publish(const std::string& channel, std::string& data)
@@ -246,7 +247,81 @@ RedisTool::RedisTool()
 RedisTool::~RedisTool()
 {}
 
+void RedisTool::handle_check_error_callback(redisAsyncContext *c, void *reply_ptr, void *privdata)
+{
+	redisReply* reply = static_cast<redisReply*>(reply_ptr);
+	std::string* str;
+	if (privdata) {
+		str = (std::string*)privdata;
+	} else {
+		str = new std::string("fcmd");
+	}
+	if (!reply) { 
+		if (c->err) { 
+			LOG_ERROR("cmd_error:%s %s\n", c->errstr, str->c_str());
+			delete str; 
+			return ; 
+		} 
+	} 
+	if (reply->type == REDIS_REPLY_ERROR) { 
+		LOG_ERROR("reply_error:%s %s", reply->str, str->c_str());
+		delete str; 
+		return; 
+	} 
+	delete str;
+}
 // void RedisTool::exec_command(const std::string& cmd, void* privdata, void(*callback)(redisAsyncContext *c, void *reply, void *privdata))
 // {
 // 	redisAsyncCommand(cmd_rac, callback, privdata, "%b", cmd.data(), cmd.size());
 // }
+
+void RedisTool::exec_cmdf(const char *format, ...)
+{
+	va_list ap;
+    va_start(ap,format);
+    redisvAsyncCommand(cmd_rac,handle_check_error_callback,nullptr,format,ap);
+    va_end(ap);
+}
+
+void RedisTool::exec_hmset(const std::string& key, std::vector<std::tuple<std::string, std::string>>& fv)
+{
+	std::stringstream ss;
+	ss << "HMSET " << key;
+	for (auto& it : fv) {
+		ss << " " << std::get<0>(it) << " " << std::get<1>(it);
+	}
+	exec_cmd(ss.str());
+}
+
+void RedisTool::exec_hmget(const std::string& key, std::vector<std::string> field, 
+		std::function<void(std::unordered_map<std::string, std::string>&)> cb)
+{
+	std::stringstream ss;
+	ss << "HMGET " << key;
+	for (auto& it : field) {
+		ss << " " << it;
+	}
+	std::function<void(redisReply*)> dec_cb = [cb, field](redisReply* reply){
+		// std::vector<std::tuple<std::string, std::string>> fv;
+		std::unordered_map<std::string, std::string> fv_list;
+		if (reply->elements != field.size()) {
+			LOG_ERROR("exec_hmget return size error:%u, %u", reply->elements, field.size());
+			return;
+		}
+
+		for (int j = 0; j < reply->elements; ++j) {
+			if (reply->element[j]->type == REDIS_REPLY_STRING) {
+				fv_list[field[j]] = std::string(reply->element[j]->str, reply->element[j]->len);
+				// fv.push_back({field[j], reply->element[j]->str});
+			} else if (reply->element[j]->type == REDIS_REPLY_INTEGER) {
+				fv_list[field[j]] = std::to_string(reply->element[j]->integer);
+				// fv.push_back({field[j], std::to_string(reply->element[j]->integer)});
+			} else {
+				LOG_ERROR("exec_hmget return type error:%u\n", reply->element[j]->type);
+				return;
+			}
+        }
+        cb(fv_list);
+	};
+	exec_cmd(ss.str(), dec_cb);
+}

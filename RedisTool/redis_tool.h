@@ -75,9 +75,16 @@ private:
 public:
 	void exec_cmd(const std::string& cmd);
 	void exec_cmd(const std::string& cmd, std::function<void(redisReply*)> cb);
-	void exec_get(const std::string& cmd, std::function<void(std::string)> cb);
+	void exec_cmdf(const char *format, ...);
+	
+	void exec_get(const std::string& key, std::function<void(std::string)> cb);
+
+	void exec_hmset(const std::string& key, std::vector<std::tuple<std::string, std::string>>& fv);
+	void exec_hmget(const std::string& key, std::vector<std::string> field, 
+		std::function<void(std::unordered_map<std::string, std::string>&)> cb);
 private:
 	static void handle_cmd_callback(redisAsyncContext *c, void *reply, void *privdata);
+	static void handle_check_error_callback(redisAsyncContext *c, void *reply, void *privdata);
 };
 
 
