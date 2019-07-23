@@ -1,0 +1,6 @@
+package test;
+message test_msg
+{
+	optional int32 integer = 1;
+	optional string str = 2;
+}
