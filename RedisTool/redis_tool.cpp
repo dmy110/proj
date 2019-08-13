@@ -1,5 +1,5 @@
 #include "redis_tool.h"
-#include "dmy_common.h"
+#include "dmy_common/dmy_common.h"
 #include <signal.h>
 #include <cstring>
 #include <sstream>

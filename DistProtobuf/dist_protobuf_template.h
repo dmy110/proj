@@ -1,7 +1,9 @@
 #ifndef _DMY_DIST_PROTOBUF_TEMPLATE_H_
 #define _DMY_DIST_PROTOBUF_TEMPLATE_H_
 #include "redis_tool.h"
-#include "dmy_common.h"
+#include "dmy_common/dmy_common.h"
+#include <google/protobuf/message.h>
+#include <sstream>
 using namespace dmy_redis_tool;
 using namespace google;
 using namespace protobuf;
@@ -83,24 +85,28 @@ public:
 		reflection->ListFields(_mutable_msg, &field_list);
 		if (field_list.size() == 0) return;
 		for (const auto it : field_list) {
-			if (it->type() == FieldDescriptor::TYPE_INT64) {
-				reflection->SetInt64(&_msg, it, reflection->GetInt64(_mutable_msg, it));
-				modified_field[it->name()] = std::to_string(reflection->GetInt64(_mutable_msg, it));
-			} else if (it->type() == FieldDescriptor::TYPE_INT32) {
-				reflection->SetInt32(&_msg, it, reflection->GetInt32(_mutable_msg, it));
-				modified_field[it->name()] = std::to_string(reflection->GetInt32(_mutable_msg, it));
-			} else if (it->type() == FieldDescriptor::TYPE_UINT32) {
-				reflection->SetUInt32(&_msg, it, reflection->GetUInt32(_mutable_msg, it));
-				modified_field[it->name()] = std::to_string(reflection->GetUInt32(_mutable_msg, it));
-			} else if (it->type() == FieldDescriptor::TYPE_UINT64) {
-				reflection->SetUInt64(&_msg, it, reflection->GetUInt64(_mutable_msg, it));
-				modified_field[it->name()] = std::to_string(reflection->GetUInt64(_mutable_msg, it));
-			} else if (it->type() == FieldDescriptor::TYPE_BOOL) {
-				reflection->SetBool(&_msg, it, reflection->GetBool(_mutable_msg, it));
-				modified_field[it->name()] = std::to_string(reflection->GetBool(_mutable_msg, it));
-			} else if (it->type() == FieldDescriptor::TYPE_STRING) {
-				reflection->SetString(&_msg, it, reflection->GetString(_mutable_msg, it));
-				modified_field[it->name()] = reflection->GetString(_mutable_msg, it);
+			if (it->is_repeated()) {
+				//对应处理一下，现在懒得做了
+			} else {
+				if (it->type() == FieldDescriptor::TYPE_INT64) {
+					reflection->SetInt64(&_msg, it, reflection->GetInt64(_mutable_msg, it));
+					modified_field[it->name()] = std::to_string(reflection->GetInt64(_mutable_msg, it));
+				} else if (it->type() == FieldDescriptor::TYPE_INT32) {
+					reflection->SetInt32(&_msg, it, reflection->GetInt32(_mutable_msg, it));
+					modified_field[it->name()] = std::to_string(reflection->GetInt32(_mutable_msg, it));
+				} else if (it->type() == FieldDescriptor::TYPE_UINT32) {
+					reflection->SetUInt32(&_msg, it, reflection->GetUInt32(_mutable_msg, it));
+					modified_field[it->name()] = std::to_string(reflection->GetUInt32(_mutable_msg, it));
+				} else if (it->type() == FieldDescriptor::TYPE_UINT64) {
+					reflection->SetUInt64(&_msg, it, reflection->GetUInt64(_mutable_msg, it));
+					modified_field[it->name()] = std::to_string(reflection->GetUInt64(_mutable_msg, it));
+				} else if (it->type() == FieldDescriptor::TYPE_BOOL) {
+					reflection->SetBool(&_msg, it, reflection->GetBool(_mutable_msg, it));
+					modified_field[it->name()] = std::to_string(reflection->GetBool(_mutable_msg, it));
+				} else if (it->type() == FieldDescriptor::TYPE_STRING) {
+					reflection->SetString(&_msg, it, reflection->GetString(_mutable_msg, it));
+					modified_field[it->name()] = reflection->GetString(_mutable_msg, it);
+				}
 			}
 		}
 	}
@@ -136,10 +142,10 @@ public:
 	{
 		// if (!_need_sync) return;
 		if (modified_field.size() == 0) return;
-		// rt.exec_cmd("MULTI");
+		rt.exec_cmd("MULTI");
 		rt.exec_cmd(get_hmset_cmd());
 		rt.exec_cmd(get_publish_cmd());
-		// rt.exec_cmd("EXEC");
+		rt.exec_cmd("EXEC");
 		modified_field.clear();
 	}
 
@@ -152,10 +158,13 @@ public:
 			// modified_field.erase(field);
 		// }
 		auto reflection = _msg.GetReflection();
-		std::vector<const FieldDescriptor*> field_list;
-		reflection->ListFields(_msg, &field_list);
+		// std::vector<const FieldDescriptor*> field_list;
+		auto descriptor = _msg.GetDescriptor();
+
+		// reflection->ListFields(_msg, &field_list);
 		if (field_list.size() == 0) return;
-		for (const auto it : field_list) {
+		for (int i = 0; i < descriptor->field_count(); ++i) {
+			auto it = descriptor->field(i);
 			if (data_map.count(it->name()) == 0) continue;
 			std::string& value = data_map[it->name()];
 			if (it->type() == FieldDescriptor::TYPE_INT64) {

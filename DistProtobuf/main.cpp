@@ -8,7 +8,7 @@
 #include <thread>
 #include "dist_protobuf_mgr.h"
 #include "redis_tool.h"
-
+using namespace std::literals::chrono_literals;
 using namespace dmy_dist_protobuf;
 using namespace google;
 using namespace protobuf;

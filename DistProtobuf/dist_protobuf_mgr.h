@@ -2,7 +2,8 @@
 #define _DMY_DIST_PROTOBUF_MGR_H_
 #include "redis_tool.h"
 #include "dist_protobuf_template.h"
-#include "dmy_common.h"
+#include "dmy_common/dmy_common.h"
+#include <regex>
 using namespace dmy_common;
 using namespace dmy_redis_tool;
 namespace dmy_dist_protobuf

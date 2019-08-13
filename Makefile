@@ -1,4 +1,6 @@
 all:hello.cpp
-	g++ hello.cpp -o hello -I/home/dengmuyang/dolphin_server/thirdpart_dolphin/include \
-	-L/home/dengmuyang/dolphin_server/thirdpart_dolphin/lib -levent -lhiredis -lprotobuf \
-	-I/home/dengmuyang/dolphin_server/thirdpart_dolphin/include/hiredis 
+	clear
+	clear
+	g++ hello.cpp test.pb.cc -o hello -ggdb -lpthread \
+	-I/home/dengmuyang/protobuf_build/include \
+	-L/home/dengmuyang/protobuf_build/lib/ -l:libprotobuf.a

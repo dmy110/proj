@@ -1,9 +1,9 @@
-#include "service_main.h"
+#include "service_group.h"
 
 using namespace dmy_multiprocess_serivce;
 
 int main()
 {
-	ServiceMain::start_main_service();
+	ServiceGroup::start_service();
 	return 0;
 }

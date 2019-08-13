@@ -2,8 +2,10 @@ all:main.cpp dist_protobuf_mgr.cpp dist_protobuf_template.cpp
 	clear
 	clear
 	g++ main.cpp dist_protobuf_mgr.cpp dist_protobuf_template.cpp ../test.pb.cc ../RedisTool/redis_tool.cpp -o main -std=c++17 -ggdb \
-	-L/home/dengmuyang/dolphin_server/thirdpart_dolphin/lib -lprotobuf_7 -levent -lhiredis \
+	-L/home/dengmuyang/dolphin_server/thirdpart_dolphin/lib -levent -lhiredis \
 	-I../ \
+	-I/home/dengmuyang/protobuf_build/include \
+	-L/home/dengmuyang/protobuf_build/lib/ -l:libprotobuf.a \
 	-I/home/dengmuyang/dolphin_server/thirdpart_dolphin/include \
 	-I../RedisTool 
 
