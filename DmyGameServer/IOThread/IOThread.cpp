@@ -1,4 +1,5 @@
 #include "IOThread.h"
+#include "Common/MsgTemplate.h"
 #include "ThreadDefine.h"
 #include <unistd.h>
 IOThread::IOThread():DmyThread(IOThread.c_str())
@@ -111,18 +112,45 @@ void IOThread::reg_fd(int fd)
 		_io_data.erase(fd);
 	}
 	auto& data = _io_data[fd];
-	data.validate = false;
-	// data.snd_data = (char*)malloc(4096);
-	// data.size = 4096;
+	// data.validate = false;
+	data.rcv_data = (char*)malloc(ServerCfg::get_cfg<int>("rcv_buffer"));
+	data.rcv_size = ServerCfg::get_cfg<int>("rcv_buffer");
+	data.rcv_idx = 0;
+
+	data.snd_data = (char*)malloc(ServerCfg::get_cfg<int>("snd_buffer"));
+	data.snd_size = ServerCfg::get_cfg<int>("snd_buffer");
+	data.snd_idx = 0;
 }
 
 void IOThread::unreg_fd(int fd)
 {
 	free(_io_data[fd].snd_data);
-	_io_data.erase(fd);	
+	free(_io_data[fd].rcv_data);
+	_io_data.erase(fd);
+
 }
 
 void IOThread::handle_epoll_in(int fd)
 {
-	
+	int size = read(fd, data.rcv_data, data.rcv_size);
+	if (size == -1) {
+		if (errno == EAGAIN || errno == EINTR) break;
+		// perror("read event error %d", fd);
+		spdlog::error("read event error:%d, %s", fd, strerror(errno));
+		handle_close_socket(fd);
+		return;
+	}
+	if (size == 0) {
+		handle_close_socket(fd);
+		return;
+	}
+
+	io_msg_t* header;
+	io_data_t* data;
+	std::tie(header, data) = construct_msg<io_msg_t, io_data_t>();
+	header->fd = fd;
+	header->msg_type = IO_SOC_DATA;
+	data->data_size = size;
+	memcpy(data->data, data.rcv_data, size);
+	_tick_queue->push(header);
 }

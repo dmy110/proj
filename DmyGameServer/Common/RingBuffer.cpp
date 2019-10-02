@@ -5,7 +5,7 @@ RingBuffer::RingBuffer(std::size_t size):_queue(size)
 
 }
 // ~RingBuffer();
-void RingBuffer::push(cmd_t& t)
+void RingBuffer::push(void* t)
 {
 	_push_buffer();
 	if (_buffer.size()) {
@@ -19,7 +19,7 @@ void RingBuffer::push(cmd_t& t)
 	}
 }
 
-void RingBuffer::pop(cmd_t* t, std::size_t size)
+void RingBuffer::pop(void** t, std::size_t size)
 {
 	return _queue.pop(t, size);
 }
@@ -36,13 +36,13 @@ void RingBuffer::_push_buffer()
 	}		
 }
 
-void WorkQueue::push(cmd_t& t)
+void WorkQueue::push(void* t)
 {
 	auto& thread_id = std::this_thead::get_id();
 	_queue_push[thread_id]->push(t);
 }
 
-void WorkQueue::pop(cmd_t* t, std::size_t size)
+void WorkQueue::pop(void** t, std::size_t size)
 {
 	auto& thread_id = std::this_thead::get_id();
 	_queue_pop[thread_id]->pop(t, size);
